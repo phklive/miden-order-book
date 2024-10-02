@@ -3,3 +3,6 @@
 
 # db files
 store.sqlit3
+
+# Mac files
+.DS_Store
