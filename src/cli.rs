@@ -1,13 +1,14 @@
 use clap::Parser;
 
 use crate::{
-    commands::{setup::SetupCmd, sync::SyncCmd},
+    commands::{init::InitCmd, setup::SetupCmd, sync::SyncCmd},
     utils::setup_client,
 };
 
 /// CLI actions
 #[derive(Debug, Parser)]
 pub enum Command {
+    Init(InitCmd),
     Setup(SetupCmd),
     Sync(SyncCmd),
 }
@@ -33,6 +34,7 @@ impl Cli {
         match &self.action {
             Command::Setup(setup) => setup.execute(client).await,
             Command::Sync(sync) => sync.execute(client).await,
+            Command::Init(init) => init.execute(),
         }
     }
 }

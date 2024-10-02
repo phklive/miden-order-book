@@ -2,7 +2,7 @@
 /target
 
 # db files
-store.sqlit3
+store.sqlite3
 
 # Mac files
 .DS_Store

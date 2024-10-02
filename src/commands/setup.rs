@@ -83,11 +83,6 @@ impl SetupCmd {
 
         println!("Applied!");
 
-        println!(
-            "Account: {:?}",
-            client.get_account(sender.id()).unwrap().0.vault()
-        );
-
         // Create 50 swap notes using AssetA and AssetB with same Tag
         let transaction_request = create_swap_notes_transaction_request(
             50,

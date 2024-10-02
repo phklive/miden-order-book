@@ -66,8 +66,6 @@ pub fn create_swap_notes_transaction_request(
     let offered_asset = Asset::Fungible(FungibleAsset::new(offering_faucet, 1).unwrap());
     let requested_asset = Asset::Fungible(FungibleAsset::new(requesting_faucet, 2).unwrap());
 
-    println!("After asset creation");
-
     for _ in 0..num {
         let (created_note, payback_note_details) =
             create_swap_note(sender, offered_asset, requested_asset, note_type, aux, rng)?;

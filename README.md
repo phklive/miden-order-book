@@ -23,6 +23,21 @@ Make sure you have Rust and Cargo installed on your system before proceeding wit
 
 ## Usage
 
+### Initializing the Environment
+
+To set up the order book environment and remove any existing database, use the `init` command:
+
+```
+miden-order-book init
+```
+
+This command will:
+1. Check for an existing `store.sqlite3` file in the current directory
+2. If the file exists, it will be deleted
+3. Prepare the environment for a fresh start
+
+It's recommended to run this command when you want to reset your local state or start with a clean slate.
+
 ### Syncing the Rollup State
 
 To synchronize the state of the rollup and update your local state, use the `sync` command:
@@ -57,6 +72,7 @@ This setup process simulates creating multiple limit orders in the order book.
 
 The Miden Order Book CLI currently supports the following commands:
 
+- `init`: Initialize or reset the order book environment.
 - `sync`: Synchronize the local state with the Miden rollup.
 - `setup`: Deploy 50 swap notes to the Miden rollup.
 
@@ -64,6 +80,9 @@ For more details on each command, you can use the `--help` flag:
 
 ```
 miden-order-book --help
+miden-order-book init --help
+miden-order-book sync --help
+miden-order-book setup --help
 ```
 
 ## License
