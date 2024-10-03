@@ -19,7 +19,7 @@ To install the Miden Order Book CLI, follow these steps:
 
 This will compile the project and install the `miden-order-book` binary in your Cargo binary directory.
 
-Make sure you have Rust and Cargo installed on your system before proceeding with the installation. If you don't have Rust installed, you can get it from [https://rustup.rs/](https://rustup.rs/).
+Make sure you have Rust and Cargo installed on your system before proceeding with the installation. If you don't have Rust installed, you can get it from the [Rust website](https://www.rust-lang.org/tools/install).
 
 ## Usage
 

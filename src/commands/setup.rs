@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{thread::sleep, time::Duration};
 
 use clap::Parser;
 use miden_client::{
@@ -12,7 +12,6 @@ use miden_client::{
     transactions::request::TransactionRequest,
     Client,
 };
-use tokio::time::sleep;
 
 use crate::utils::create_swap_notes_transaction_request;
 
@@ -66,18 +65,18 @@ impl SetupCmd {
             .new_transaction(faucet_a.id(), transaction_request)
             .unwrap();
         let asset_note_id = tx_result.relevant_notes()[0].id();
-        let _ = client.submit_transaction(tx_result).await.unwrap();
-        println!("Minted assets");
+        client.submit_transaction(tx_result).await.unwrap();
+        println!("Minted assets: ASSETA and ASSETB");
 
         // Sync commited notes
-        sleep(Duration::from_secs(10)).await;
+        sleep(Duration::from_secs(10));
         client.sync_state().await.unwrap();
 
         // Fund sender with ASSETA
         let tx_request = TransactionRequest::consume_notes(vec![asset_note_id]);
         let tx_result = client.new_transaction(sender.id(), tx_request).unwrap();
         client.submit_transaction(tx_result).await.unwrap();
-        println!("Funded sender account with ASSETA!");
+        println!("Funded sender account with ASSETA");
 
         // Create 50 swap notes using AssetA and AssetB with same Tag
         let transaction_request = create_swap_notes_transaction_request(
@@ -94,9 +93,9 @@ impl SetupCmd {
         client.submit_transaction(tx_result).await.unwrap();
         println!("Created 50 swap notes");
 
-        println!("Submitted to the rollup!");
+        println!("Submitted notes to the rollup");
 
-        println!("CLOB has been successfully setup.");
+        println!("CLOB has been successfully setup");
 
         Ok(())
     }
