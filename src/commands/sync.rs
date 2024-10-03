@@ -17,6 +17,7 @@ impl SyncCmd {
         mut client: Client<N, R, S, A>,
     ) -> Result<(), String> {
         client.sync_state().await?;
+        println!("Sync successful.");
         Ok(())
     }
 }
