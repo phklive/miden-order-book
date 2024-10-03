@@ -54,12 +54,10 @@ impl SetupCmd {
             storage_type: AccountStorageType::OnChain,
         };
         let (sender, _) = client.new_account(client_sender_template).unwrap();
-
         println!("Created sender account");
 
         // Mint 50 ASSETA directed to sender
         let asset = FungibleAsset::new(faucet_a.id(), 50).unwrap();
-        println!("Created fungible asset");
         let note_type = NoteType::Public;
         let transaction_request =
             TransactionRequest::mint_fungible_asset(asset, sender.id(), note_type, client.rng())
@@ -69,7 +67,6 @@ impl SetupCmd {
             .unwrap();
         let asset_note_id = tx_result.relevant_notes()[0].id();
         let _ = client.submit_transaction(tx_result).await.unwrap();
-
         println!("Minted assets");
 
         // Sync commited notes
@@ -80,8 +77,7 @@ impl SetupCmd {
         let tx_request = TransactionRequest::consume_notes(vec![asset_note_id]);
         let tx_result = client.new_transaction(sender.id(), tx_request).unwrap();
         client.submit_transaction(tx_result).await.unwrap();
-
-        println!("Applied!");
+        println!("Funded sender account with ASSETA!");
 
         // Create 50 swap notes using AssetA and AssetB with same Tag
         let transaction_request = create_swap_notes_transaction_request(
@@ -96,8 +92,11 @@ impl SetupCmd {
             .new_transaction(sender.id(), transaction_request)
             .unwrap();
         client.submit_transaction(tx_result).await.unwrap();
+        println!("Created 50 swap notes");
 
-        println!("It worked!");
+        println!("Submitted to the rollup!");
+
+        println!("CLOB has been successfully setup.");
 
         Ok(())
     }
