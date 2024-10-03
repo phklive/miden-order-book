@@ -2,6 +2,14 @@
 
 This CLI tool provides an interface for interacting with a central limit order book implemented on the Miden rollup.
 
+## Prerequisites
+
+Before you begin, ensure you have the following prerequisites:
+
+1. **Miden Node**: You need to run a Miden node. For installation and setup instructions, refer to the [Miden Node GitHub repository](https://github.com/0xPolygonMiden/miden-node).
+
+2. **Rust and Cargo**: This project is built with Rust. If you don't have Rust and Cargo installed, you can get them from the [Rust website](https://www.rust-lang.org/tools/install). Follow the installation instructions for your operating system.
+
 ## Installation
 
 To install the Miden Order Book CLI, follow these steps:
@@ -18,8 +26,6 @@ To install the Miden Order Book CLI, follow these steps:
    ```
 
 This will compile the project and install the `miden-order-book` binary in your Cargo binary directory.
-
-Make sure you have Rust and Cargo installed on your system before proceeding with the installation. If you don't have Rust installed, you can get it from the [Rust website](https://www.rust-lang.org/tools/install).
 
 ## Usage
 
