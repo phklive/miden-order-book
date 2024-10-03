@@ -78,17 +78,17 @@ This setup process simulates creating multiple limit orders in the order book.
 
 The Miden Order Book CLI currently supports the following commands:
 
-- `init`: Initialize or reset the order book environment.
-- `sync`: Synchronize the local state with the Miden rollup.
-- `setup`: Deploy 50 swap notes to the Miden rollup.
+| Command | Description | Usage |
+|---------|-------------|-------|
+| `init`  | Initialize or reset the order book environment | `miden-order-book init` |
+| `sync`  | Synchronize the local state with the Miden rollup | `miden-order-book sync` |
+| `setup` | Deploy 50 swap notes to the Miden rollup | `miden-order-book setup` |
 
 For more details on each command, you can use the `--help` flag:
 
 ```
 miden-order-book --help
-miden-order-book init --help
-miden-order-book sync --help
-miden-order-book setup --help
+miden-order-book <command> --help
 ```
 
 ## License
