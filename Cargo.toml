@@ -9,9 +9,8 @@ miden-lib = { version = "0.5", default-features = false }
 clap = { version = "4.5", features = ["derive"] }
 rand = { version = "0.8.5" }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", features = ["raw_value"] }
+toml = { version = "0.8.9" }
 tokio = { version = "1.40.0", features = ["rt-multi-thread", "net", "macros"] }
 tonic = { version = "0.12.3" }
-toml = { version = "0.8" }
 tracing = { version = "0.1.40" }
 tracing-subscriber = { version = "0.3" }

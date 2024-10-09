@@ -3,6 +3,7 @@ use cli::Cli;
 
 mod cli;
 mod commands;
+mod constants;
 mod utils;
 
 #[tokio::main]

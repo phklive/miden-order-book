@@ -74,6 +74,19 @@ This command will:
 
 This setup process simulates creating multiple limit orders in the order book.
 
+### Executing an order
+
+To execute an order using the limit order book on Miden, use the `order` command followed by the `<type>` of order:
+
+```
+miden-order-book order <type> <amount_1> <faucet_id_1> <amount_2> <faucet_id_2>
+```
+
+This command will:
+1. Query all relevant notes that can fullfill the order request
+2. Execute the order and transition local state
+3. Submit updated state to the rollup
+
 ## Commands
 
 The Miden Order Book CLI currently supports the following commands:
@@ -83,6 +96,7 @@ The Miden Order Book CLI currently supports the following commands:
 | `init`  | Initialize or reset the order book environment | `miden-order-book init` |
 | `sync`  | Synchronize the local state with the Miden rollup | `miden-order-book sync` |
 | `setup` | Deploy 50 swap notes to the Miden rollup | `miden-order-book setup` |
+| `order` | Execute a `buy` or `sell` order | `miden-order-book order <type>` |
 
 For more details on each command, you can use the `--help` flag:
 

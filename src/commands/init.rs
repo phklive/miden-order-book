@@ -1,19 +1,29 @@
 use clap::Parser;
 use std::{fs, path::Path};
 
+use crate::constants::{DB_FILE_PATH, DETAILS_FILE_PATH, USER_ACCOUNT_FILE_PATH};
+
 #[derive(Debug, Clone, Parser)]
-#[clap(about = "Setup the order book")]
+#[clap(about = "Initialize the order book")]
 pub struct InitCmd {}
 
 impl InitCmd {
     pub fn execute(&self) -> Result<(), String> {
-        let file_path = Path::new("store.sqlite3");
-        if file_path.exists() {
-            println!("Deleting store.sqlite3");
-            fs::remove_file(file_path).map_err(|e| format!("Failed to remove file: {}", e))?;
+        Self::remove_file_if_exists(DB_FILE_PATH)?;
+        Self::remove_file_if_exists(DETAILS_FILE_PATH)?;
+        Self::remove_file_if_exists(USER_ACCOUNT_FILE_PATH)?;
+        Ok(())
+    }
+
+    fn remove_file_if_exists(file_path: &str) -> Result<(), String> {
+        let path = Path::new(file_path);
+        if path.exists() {
+            println!("Deleting {}", file_path);
+            fs::remove_file(path)
+                .map_err(|e| format!("Failed to remove file {}: {}", file_path, e))?;
             println!("File deleted successfully");
         } else {
-            println!("store.sqlite3 does not exist");
+            println!("{} does not exist", file_path);
         }
         Ok(())
     }

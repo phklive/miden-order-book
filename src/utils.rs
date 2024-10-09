@@ -1,12 +1,10 @@
-use std::rc::Rc;
-
 use miden_client::{
-    accounts::AccountId,
+    accounts::{AccountData, AccountId},
     assets::{Asset, FungibleAsset},
     auth::StoreAuthenticator,
     config::{Endpoint, RpcConfig},
     crypto::{FeltRng, RpoRandomCoin},
-    notes::NoteType,
+    notes::{NoteTag, NoteType},
     rpc::TonicRpcClient,
     store::sqlite_store::{config::SqliteStoreConfig, SqliteStore},
     transactions::{
@@ -15,8 +13,22 @@ use miden_client::{
     },
     Client, Felt,
 };
-use miden_lib::notes::create_swap_note;
+use miden_lib::{
+    notes::create_swap_note,
+    utils::{Deserializable, Serializable},
+};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::File,
+    io::{self, Read, Write},
+    rc::Rc,
+};
+
+use crate::constants::DETAILS_FILE_PATH;
+
+// Client Setup
+// ================================================================================================
 
 pub fn setup_client() -> Client<
     TonicRpcClient,
@@ -25,21 +37,16 @@ pub fn setup_client() -> Client<
     StoreAuthenticator<RpoRandomCoin, SqliteStore>,
 > {
     let store_config = SqliteStoreConfig::default();
-    let store = SqliteStore::new(&store_config).unwrap();
-    let store = Rc::new(store);
-
+    let store = Rc::new(SqliteStore::new(&store_config).unwrap());
     let mut rng = rand::thread_rng();
     let coin_seed: [u64; 4] = rng.gen();
-
     let rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
     let authenticator = StoreAuthenticator::new_with_rng(store.clone(), rng);
-
     let rpc_config = RpcConfig {
         endpoint: Endpoint::new("http".to_string(), "localhost".to_string(), 57291),
         timeout_ms: 10000,
     };
     let in_debug_mode = true;
-
     Client::new(
         TonicRpcClient::new(&rpc_config),
         rng,
@@ -49,6 +56,9 @@ pub fn setup_client() -> Client<
     )
 }
 
+// Transaction Request Creation
+// ================================================================================================
+
 pub fn create_swap_notes_transaction_request(
     num: u8,
     sender: AccountId,
@@ -56,11 +66,8 @@ pub fn create_swap_notes_transaction_request(
     requesting_faucet: AccountId,
     rng: &mut impl FeltRng,
 ) -> Result<TransactionRequest, TransactionRequestError> {
-    // transaction request setup
     let mut expected_future_notes = vec![];
     let mut own_output_notes = vec![];
-
-    // swap note setup
     let note_type = NoteType::Public;
     let aux = Felt::new(0);
     let offered_asset = Asset::Fungible(FungibleAsset::new(offering_faucet, 1).unwrap());
@@ -74,8 +81,54 @@ pub fn create_swap_notes_transaction_request(
     }
 
     println!("Created all notes");
-
     TransactionRequest::new()
         .with_expected_future_notes(expected_future_notes)
         .with_own_output_notes(own_output_notes)
+}
+
+// AccountData I/O
+// ================================================================================================
+
+pub fn export_account_data(account_data: &AccountData, file_name: &str) -> io::Result<()> {
+    let serialized = account_data.to_bytes();
+    let mut file = File::create(file_name)?;
+    file.write_all(&serialized)?;
+    Ok(())
+}
+
+pub fn import_account_data(file_name: &str) -> io::Result<AccountData> {
+    let mut file = File::open(file_name)?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+    AccountData::read_from_bytes(&buffer)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
+}
+
+// OrderBookDetails
+// ================================================================================================
+
+#[derive(Serialize, Deserialize)]
+pub struct OrderBookDetails {
+    pub faucet_a: AccountId,
+    pub faucet_b: AccountId,
+    pub sender: AccountId,
+    pub user: AccountId,
+    pub swap_tag: NoteTag,
+}
+
+pub fn export_details(details: &OrderBookDetails) -> Result<(), io::Error> {
+    let serialized =
+        toml::to_string(details).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let mut file = File::create(DETAILS_FILE_PATH)?;
+    file.write_all(serialized.as_bytes())?;
+    Ok(())
+}
+
+pub fn import_details() -> Result<OrderBookDetails, io::Error> {
+    let mut file = File::open(DETAILS_FILE_PATH)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let details: OrderBookDetails =
+        toml::from_str(&contents).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    Ok(details)
 }

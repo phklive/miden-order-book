@@ -1,8 +1,10 @@
 # Rust
 /target
 
-# db files
+# misc files
 store.sqlite3
+*.mac
+*.toml
 
 # Mac files
 .DS_Store

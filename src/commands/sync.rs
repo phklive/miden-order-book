@@ -4,9 +4,6 @@ use miden_client::{
     auth::TransactionAuthenticator, crypto::FeltRng, rpc::NodeRpcClient, store::Store, Client,
 };
 
-// Setup COMMAND
-// ================================================================================================
-
 #[derive(Debug, Clone, Parser)]
 #[clap(about = "Sync rollup state")]
 pub struct SyncCmd {}
