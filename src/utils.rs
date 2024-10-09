@@ -4,7 +4,7 @@ use miden_client::{
     auth::StoreAuthenticator,
     config::{Endpoint, RpcConfig},
     crypto::{FeltRng, RpoRandomCoin},
-    notes::{NoteTag, NoteType},
+    notes::NoteType,
     rpc::TonicRpcClient,
     store::sqlite_store::{config::SqliteStoreConfig, SqliteStore},
     transactions::{
@@ -18,14 +18,11 @@ use miden_lib::{
     utils::{Deserializable, Serializable},
 };
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{self, Read, Write},
     rc::Rc,
 };
-
-use crate::constants::DETAILS_FILE_PATH;
 
 // Client Setup
 // ================================================================================================
@@ -71,8 +68,9 @@ pub fn create_swap_notes_transaction_request(
     let note_type = NoteType::Public;
     let aux = Felt::new(0);
     let offered_asset = Asset::Fungible(FungibleAsset::new(offering_faucet, 1).unwrap());
-    let requested_asset = Asset::Fungible(FungibleAsset::new(requesting_faucet, 2).unwrap());
+    let requested_asset = Asset::Fungible(FungibleAsset::new(requesting_faucet, 1).unwrap());
 
+    // Create 50 offering/requesting swap notes
     for _ in 0..num {
         let (created_note, payback_note_details) =
             create_swap_note(sender, offered_asset, requested_asset, note_type, aux, rng)?;
@@ -80,7 +78,14 @@ pub fn create_swap_notes_transaction_request(
         own_output_notes.push(OutputNote::Full(created_note));
     }
 
-    println!("Created all notes");
+    // Create 50 requesting/offering swap notes
+    for _ in 0..num {
+        let (created_note, payback_note_details) =
+            create_swap_note(sender, requested_asset, offered_asset, note_type, aux, rng)?;
+        expected_future_notes.push(payback_note_details);
+        own_output_notes.push(OutputNote::Full(created_note));
+    }
+
     TransactionRequest::new()
         .with_expected_future_notes(expected_future_notes)
         .with_own_output_notes(own_output_notes)
@@ -89,46 +94,17 @@ pub fn create_swap_notes_transaction_request(
 // AccountData I/O
 // ================================================================================================
 
-pub fn export_account_data(account_data: &AccountData, file_name: &str) -> io::Result<()> {
+pub fn export_account_data(account_data: &AccountData, filename: &str) -> io::Result<()> {
     let serialized = account_data.to_bytes();
-    let mut file = File::create(file_name)?;
+    let mut file = File::create(format!("{}.mac", filename))?;
     file.write_all(&serialized)?;
     Ok(())
 }
 
-pub fn import_account_data(file_name: &str) -> io::Result<AccountData> {
-    let mut file = File::open(file_name)?;
+pub fn _import_account_data(filename: &str) -> io::Result<AccountData> {
+    let mut file = File::open(filename)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
     AccountData::read_from_bytes(&buffer)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
-}
-
-// OrderBookDetails
-// ================================================================================================
-
-#[derive(Serialize, Deserialize)]
-pub struct OrderBookDetails {
-    pub faucet_a: AccountId,
-    pub faucet_b: AccountId,
-    pub sender: AccountId,
-    pub user: AccountId,
-    pub swap_tag: NoteTag,
-}
-
-pub fn export_details(details: &OrderBookDetails) -> Result<(), io::Error> {
-    let serialized =
-        toml::to_string(details).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    let mut file = File::create(DETAILS_FILE_PATH)?;
-    file.write_all(serialized.as_bytes())?;
-    Ok(())
-}
-
-pub fn import_details() -> Result<OrderBookDetails, io::Error> {
-    let mut file = File::open(DETAILS_FILE_PATH)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    let details: OrderBookDetails =
-        toml::from_str(&contents).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    Ok(details)
 }
