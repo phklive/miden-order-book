@@ -19,8 +19,9 @@ use miden_lib::{
 };
 use rand::Rng;
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{self, Read, Write},
+    path::Path,
     rc::Rc,
 };
 
@@ -96,15 +97,44 @@ pub fn create_swap_notes_transaction_request(
 
 pub fn export_account_data(account_data: &AccountData, filename: &str) -> io::Result<()> {
     let serialized = account_data.to_bytes();
-    let mut file = File::create(format!("{}.mac", filename))?;
+    fs::create_dir_all("accounts")?;
+    let file_path = Path::new("accounts").join(format!("{}.mac", filename));
+    let mut file = File::create(file_path)?;
     file.write_all(&serialized)?;
     Ok(())
 }
 
-pub fn _import_account_data(filename: &str) -> io::Result<AccountData> {
-    let mut file = File::open(filename)?;
+pub fn import_account_data(file_path: &str) -> io::Result<AccountData> {
+    let mut file = File::open(file_path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
     AccountData::read_from_bytes(&buffer)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
+}
+
+pub fn load_accounts() -> io::Result<Vec<AccountData>> {
+    let accounts_dir = Path::new("accounts");
+
+    if !accounts_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut accounts = Vec::new();
+
+    for entry in fs::read_dir(accounts_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let path_str = path.to_str().unwrap();
+
+        match import_account_data(path_str) {
+            Ok(account_data) => accounts.push(account_data),
+            Err(e) => eprintln!(
+                "Error importing account data from {} : {}",
+                path_str,
+                e.to_string()
+            ),
+        }
+    }
+
+    Ok(accounts)
 }

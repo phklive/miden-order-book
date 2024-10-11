@@ -1,7 +1,6 @@
+use crate::constants::{ACCOUNTS_DIR, DB_FILE_PATH};
 use clap::Parser;
 use std::{fs, path::Path};
-
-use crate::constants::{DB_FILE_PATH, DETAILS_FILE_PATH, USER_ACCOUNT_FILE_PATH};
 
 #[derive(Debug, Clone, Parser)]
 #[clap(about = "Initialize the order book")]
@@ -9,21 +8,26 @@ pub struct InitCmd {}
 
 impl InitCmd {
     pub fn execute(&self) -> Result<(), String> {
-        Self::remove_file_if_exists(DB_FILE_PATH)?;
-        Self::remove_file_if_exists(DETAILS_FILE_PATH)?;
-        Self::remove_file_if_exists(USER_ACCOUNT_FILE_PATH)?;
+        self.remove_file_if_exists(DB_FILE_PATH)?;
+        self.remove_folder_if_exists(ACCOUNTS_DIR)?;
+        println!("State successfully initialized.");
         Ok(())
     }
 
-    fn remove_file_if_exists(file_path: &str) -> Result<(), String> {
+    pub fn remove_file_if_exists(&self, file_path: &str) -> Result<(), String> {
         let path = Path::new(file_path);
         if path.exists() {
-            println!("Deleting {}", file_path);
             fs::remove_file(path)
                 .map_err(|e| format!("Failed to remove file {}: {}", file_path, e))?;
-            println!("File deleted successfully");
-        } else {
-            println!("{} does not exist", file_path);
+        }
+        Ok(())
+    }
+
+    fn remove_folder_if_exists(&self, folder_path: &str) -> Result<(), String> {
+        let path = Path::new(folder_path);
+        if path.exists() && path.is_dir() {
+            fs::remove_dir_all(path)
+                .map_err(|e| format!("Failed to remove folder {}: {}", folder_path, e))?;
         }
         Ok(())
     }

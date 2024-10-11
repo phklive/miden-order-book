@@ -1,7 +1,10 @@
 use clap::Parser;
 
 use crate::{
-    commands::{init::InitCmd, order::OrderCmd, query::QueryCmd, setup::SetupCmd, sync::SyncCmd},
+    commands::{
+        fund::FundCmd, init::InitCmd, login::LoginCmd, order::OrderCmd, query::QueryCmd,
+        setup::SetupCmd, sync::SyncCmd,
+    },
     utils::setup_client,
 };
 
@@ -11,6 +14,8 @@ pub enum Command {
     Init(InitCmd),
     Setup(SetupCmd),
     Order(OrderCmd),
+    Login(LoginCmd),
+    Fund(FundCmd),
     Sync(SyncCmd),
     Query(QueryCmd),
 }
@@ -30,6 +35,7 @@ pub struct Cli {
 
 impl Cli {
     pub async fn execute(&self) -> Result<(), String> {
+        // Setup client
         let client = setup_client();
 
         // Execute Cli commands
@@ -39,6 +45,8 @@ impl Cli {
             Command::Sync(sync) => sync.execute(client).await,
             Command::Init(init) => init.execute(),
             Command::Query(query) => query.execute(client).await,
+            Command::Fund(fund) => fund.execute(client).await,
+            Command::Login(login) => login.execute(client),
         }
     }
 }

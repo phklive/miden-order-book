@@ -14,7 +14,12 @@ use miden_client::{
 };
 use tokio::time::sleep;
 
-use crate::utils::{create_swap_notes_transaction_request, export_account_data};
+use crate::{
+    constants::DB_FILE_PATH,
+    utils::{create_swap_notes_transaction_request, export_account_data},
+};
+
+use super::init::InitCmd;
 
 // AccountWithFilename
 // ================================================================================================
@@ -37,12 +42,15 @@ impl SetupCmd {
         &self,
         mut client: Client<N, R, S, A>,
     ) -> Result<(), String> {
+        // Sync rollup state
+        client.sync_state().await.unwrap();
+
         // Create faucet accounts for BTC and ETH
         let (faucet_a, faucet_a_seed) = Self::create_faucet(100, "BTC", &mut client);
         let (faucet_b, faucet_b_seed) = Self::create_faucet(100, "ETH", &mut client);
 
         // Create admin account
-        let (admin, admin_seed) = Self::create_wallet(&mut client);
+        let (admin, _) = Self::create_wallet(&mut client);
 
         // Mint assets for admin
         Self::fund_admin_wallet(faucet_a.id(), faucet_b.id(), admin.id(), &mut client).await;
@@ -61,17 +69,13 @@ impl SetupCmd {
             account_seed: faucet_b_seed,
             filename: "faucet_b".to_string(),
         };
-        let admin_with_filename = AccountWithFilename {
-            account: admin,
-            account_seed: admin_seed,
-            filename: "admin".to_string(),
-        };
-        Self::export_clob_data(
-            faucet_a_with_filename,
-            faucet_b_with_filename,
-            admin_with_filename,
-            &mut client,
-        );
+        Self::export_clob_data(faucet_a_with_filename, faucet_b_with_filename, &mut client);
+
+        // Remove DB file
+        let init = InitCmd {};
+        init.remove_file_if_exists(DB_FILE_PATH).unwrap();
+
+        println!("CLOB successfully setup.");
 
         Ok(())
     }
@@ -165,7 +169,6 @@ impl SetupCmd {
     fn export_clob_data<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
         faucet_a: AccountWithFilename,
         faucet_b: AccountWithFilename,
-        admin: AccountWithFilename,
         client: &mut Client<N, R, S, A>,
     ) {
         // build swap tags
@@ -182,12 +185,17 @@ impl SetupCmd {
         )
         .unwrap();
 
+        println!("BTC faucet: {}", faucet_a.account.id());
+        println!("ETH faucet: {}", faucet_b.account.id());
+        println!("BTC/ETH tag: {}", btc_eth_tag);
+        println!("ETH/BTC tag: {}", eth_btc_tag);
+
         // Export accounts
         for AccountWithFilename {
             account,
             account_seed,
             filename,
-        } in [faucet_a, faucet_b, admin].into_iter()
+        } in [faucet_a, faucet_b].into_iter()
         {
             let auth = client.get_account_auth(account.id()).unwrap();
             let user_data = AccountData::new(account, Some(account_seed), auth);
@@ -195,8 +203,5 @@ impl SetupCmd {
         }
 
         // TODO: remove db file
-
-        println!("BTC/ETH tag: {}", btc_eth_tag);
-        println!("ETH/BTC tag: {}", eth_btc_tag);
     }
 }
