@@ -2,6 +2,7 @@
 /target
 
 # misc files
+accounts/
 store.sqlite3
 *.mac
 *.toml
