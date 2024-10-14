@@ -17,12 +17,8 @@ use miden_client::{
     },
     Client, Felt,
 };
-use miden_lib::{
-    notes::create_swap_note,
-    utils::{Deserializable, Serializable},
-};
-use rand::seq::SliceRandom;
-use rand::Rng;
+use miden_lib::utils::{Deserializable, Serializable};
+use rand::{seq::SliceRandom, Rng};
 
 use miden_lib::transaction::TransactionKernel;
 use miden_objects::assembly::Assembler;
@@ -39,6 +35,7 @@ use std::{
     path::Path,
     rc::Rc,
 };
+
 
 // Partially Fillable SWAP note
 // ================================================================================================
