@@ -21,13 +21,113 @@ use miden_lib::{
     notes::create_swap_note,
     utils::{Deserializable, Serializable},
 };
-use rand::{seq::SliceRandom, Rng};
+use rand::seq::SliceRandom;
+use rand::Rng;
+
+use miden_lib::transaction::TransactionKernel;
+use miden_objects::assembly::Assembler;
+use miden_objects::{
+    notes::{
+        Note, NoteAssets, NoteExecutionHint, NoteExecutionMode, NoteInputs, NoteMetadata,
+        NoteRecipient, NoteScript,
+    },
+    NoteError, Word,
+};
 use std::{
     fs::{self, File},
     io::{self, Read, Write},
     path::Path,
     rc::Rc,
 };
+
+// Partially Fillable SWAP note
+// ================================================================================================
+
+pub fn build_swap_tag(
+    note_type: NoteType,
+    offered_asset: &Asset,
+    requested_asset: &Asset,
+) -> Result<NoteTag, NoteError> {
+    const SWAP_USE_CASE_ID: u16 = 0;
+
+    // get bits 4..12 from faucet IDs of both assets, these bits will form the tag payload; the
+    // reason we skip the 4 most significant bits is that these encode metadata of underlying
+    // faucets and are likely to be the same for many different faucets.
+
+    let offered_asset_id: u64 = offered_asset.faucet_id().into();
+    let offered_asset_tag = (offered_asset_id >> 52) as u8;
+
+    let requested_asset_id: u64 = requested_asset.faucet_id().into();
+    let requested_asset_tag = (requested_asset_id >> 52) as u8;
+
+    let payload = ((offered_asset_tag as u16) << 8) | (requested_asset_tag as u16);
+
+    let execution = NoteExecutionMode::Local;
+    match note_type {
+        NoteType::Public => NoteTag::for_public_use_case(SWAP_USE_CASE_ID, payload, execution),
+        _ => NoteTag::for_local_use_case(SWAP_USE_CASE_ID, payload),
+    }
+}
+
+/// Generates a SWAP note - swap of assets between two accounts - and returns the note as well as
+/// [NoteDetails] for the payback note.
+///
+/// This script enables a swap of 2 assets between the `sender` account and any other account that
+/// is willing to consume the note. The consumer will receive the `offered_asset` and will create a
+/// new P2ID note with `sender` as target, containing the `requested_asset`.
+///
+/// # Errors
+/// Returns an error if deserialization or compilation of the `SWAP` script fails.
+pub fn create_partial_swap_note(
+    creator: AccountId,
+    last_consumer: AccountId,
+    offered_asset: Asset,
+    requested_asset: Asset,
+    note_type: NoteType,
+    swap_serial_num: [Felt; 4],
+    fill_number: u64,
+) -> Result<Note, NoteError> {
+    let assembler: Assembler = TransactionKernel::assembler_testing().with_debug_mode(false);
+
+    let note_code = include_str!("../src/notes/PUBLIC_SWAPp.masm");
+    let note_script = NoteScript::compile(note_code, assembler).unwrap();
+
+    let requested_asset_word: Word = requested_asset.into();
+    let tag = build_swap_tag(note_type, &offered_asset, &requested_asset)?;
+
+    let inputs = NoteInputs::new(vec![
+        requested_asset_word[0],
+        requested_asset_word[1],
+        requested_asset_word[2],
+        requested_asset_word[3],
+        tag.inner().into(),
+        Felt::new(0),
+        Felt::new(0),
+        Felt::new(0),
+        Felt::new(fill_number),
+        Felt::new(0),
+        Felt::new(0),
+        Felt::new(0),
+        creator.into(),
+    ])?;
+
+    let aux = Felt::new(0);
+
+    // build the outgoing note
+    let metadata = NoteMetadata::new(
+        last_consumer,
+        note_type,
+        tag,
+        NoteExecutionHint::always(),
+        aux,
+    )?;
+
+    let assets = NoteAssets::new(vec![offered_asset])?;
+    let recipient = NoteRecipient::new(swap_serial_num, note_script.clone(), inputs.clone());
+    let note = Note::new(assets.clone(), metadata, recipient.clone());
+
+    Ok(note)
+}
 
 // Client Setup
 // ================================================================================================
@@ -71,10 +171,8 @@ pub fn create_swap_notes_transaction_request(
     felt_rng: &mut impl FeltRng,
 ) -> Result<TransactionRequest, TransactionRequestError> {
     // Setup note variables
-    let mut expected_future_notes = vec![];
     let mut own_output_notes = vec![];
     let note_type = NoteType::Public;
-    let aux = Felt::new(0);
 
     // Generate random distributions for offering and requesting assets
     let offering_distribution =
@@ -93,15 +191,17 @@ pub fn create_swap_notes_transaction_request(
             FungibleAsset::new(requesting_faucet, requesting_distribution[i as usize]).unwrap(),
         );
 
-        let (created_note, payback_note_details) = create_swap_note(
+        let swap_serial_num = felt_rng.draw_word();
+        let created_note = create_partial_swap_note(
+            sender,
             sender,
             offered_asset,
             requested_asset,
             note_type,
-            aux,
-            felt_rng,
+            swap_serial_num,
+            0,
         )?;
-        expected_future_notes.push(payback_note_details);
+        // expected_future_notes.push(payback_note_details);
         total_offering += offering_distribution[i as usize];
         total_requesting += requesting_distribution[i as usize];
         println!(
@@ -119,9 +219,7 @@ pub fn create_swap_notes_transaction_request(
     println!("Total generated offering asset: {}", total_offering);
     println!("Total generated requesting asset: {}", total_requesting);
 
-    TransactionRequest::new()
-        .with_expected_future_notes(expected_future_notes)
-        .with_own_output_notes(own_output_notes)
+    TransactionRequest::new().with_own_output_notes(own_output_notes)
 }
 
 pub fn generate_random_distribution(n: usize, total: u64) -> Vec<u64> {
