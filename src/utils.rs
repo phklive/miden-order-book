@@ -1,12 +1,16 @@
+use core::panic;
 use miden_client::{
     accounts::{AccountData, AccountId},
     assets::{Asset, FungibleAsset},
     auth::StoreAuthenticator,
     config::{Endpoint, RpcConfig},
     crypto::{FeltRng, RpoRandomCoin},
-    notes::NoteType,
+    notes::{NoteTag, NoteType},
     rpc::TonicRpcClient,
-    store::sqlite_store::{config::SqliteStoreConfig, SqliteStore},
+    store::{
+        sqlite_store::{config::SqliteStoreConfig, SqliteStore},
+        InputNoteRecord,
+    },
     transactions::{
         request::{TransactionRequest, TransactionRequestError},
         OutputNote,
@@ -17,7 +21,7 @@ use miden_lib::{
     notes::create_swap_note,
     utils::{Deserializable, Serializable},
 };
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 use std::{
     fs::{self, File},
     io::{self, Read, Write},
@@ -58,38 +62,102 @@ pub fn setup_client() -> Client<
 // ================================================================================================
 
 pub fn create_swap_notes_transaction_request(
-    num: u8,
+    num_notes: u8,
     sender: AccountId,
     offering_faucet: AccountId,
+    total_asset_offering: u64,
     requesting_faucet: AccountId,
-    rng: &mut impl FeltRng,
+    total_asset_requesting: u64,
+    felt_rng: &mut impl FeltRng,
 ) -> Result<TransactionRequest, TransactionRequestError> {
+    // Setup note variables
     let mut expected_future_notes = vec![];
     let mut own_output_notes = vec![];
     let note_type = NoteType::Public;
     let aux = Felt::new(0);
-    let offered_asset = Asset::Fungible(FungibleAsset::new(offering_faucet, 1).unwrap());
-    let requested_asset = Asset::Fungible(FungibleAsset::new(requesting_faucet, 1).unwrap());
 
-    // Create 50 offering/requesting swap notes
-    for _ in 0..num {
-        let (created_note, payback_note_details) =
-            create_swap_note(sender, offered_asset, requested_asset, note_type, aux, rng)?;
+    // Generate random distributions for offering and requesting assets
+    let offering_distribution =
+        generate_random_distribution(num_notes as usize, total_asset_offering);
+    let requesting_distribution =
+        generate_random_distribution(num_notes as usize, total_asset_requesting);
+
+    let mut total_offering = 0;
+    let mut total_requesting = 0;
+
+    for i in 0..num_notes {
+        let offered_asset = Asset::Fungible(
+            FungibleAsset::new(offering_faucet, offering_distribution[i as usize]).unwrap(),
+        );
+        let requested_asset = Asset::Fungible(
+            FungibleAsset::new(requesting_faucet, requesting_distribution[i as usize]).unwrap(),
+        );
+
+        let (created_note, payback_note_details) = create_swap_note(
+            sender,
+            offered_asset,
+            requested_asset,
+            note_type,
+            aux,
+            felt_rng,
+        )?;
         expected_future_notes.push(payback_note_details);
+        total_offering += offering_distribution[i as usize];
+        total_requesting += requesting_distribution[i as usize];
+        println!(
+            "{} - Created note with assets:\noffering: {:?}\nreal offering: {}\nrequesting: {}\nreal requesting: {}\ninputs: {:?}\n",
+            i,
+            created_note.assets().iter().collect::<Vec<&Asset>>()[0].unwrap_fungible().amount(),
+            offering_distribution[i as usize],
+            created_note.inputs().values()[4],
+            requesting_distribution[i as usize],
+            created_note.inputs().values()
+        );
         own_output_notes.push(OutputNote::Full(created_note));
     }
 
-    // Create 50 requesting/offering swap notes
-    for _ in 0..num {
-        let (created_note, payback_note_details) =
-            create_swap_note(sender, requested_asset, offered_asset, note_type, aux, rng)?;
-        expected_future_notes.push(payback_note_details);
-        own_output_notes.push(OutputNote::Full(created_note));
-    }
+    println!("Total generated offering asset: {}", total_offering);
+    println!("Total generated requesting asset: {}", total_requesting);
 
     TransactionRequest::new()
         .with_expected_future_notes(expected_future_notes)
         .with_own_output_notes(own_output_notes)
+}
+
+pub fn generate_random_distribution(n: usize, total: u64) -> Vec<u64> {
+    if total < n as u64 {
+        panic!("Total must at least be equal to n to make sure that all values are non-zero.")
+    }
+
+    let mut rng = rand::thread_rng();
+    let mut result = Vec::with_capacity(n);
+    let mut remaining = total;
+
+    // Generate n-1 random numbers
+    for _ in 0..n - 1 {
+        if remaining == 0 {
+            result.push(1); // Ensure non-zero
+            continue;
+        }
+
+        let max = remaining.saturating_sub(n as u64 - result.len() as u64 - 1);
+        let value = if max > 1 {
+            rng.gen_range(1..=(total / n as u64))
+        } else {
+            1
+        };
+
+        result.push(value);
+        remaining -= value;
+    }
+
+    // Add the last number to make the sum equal to total
+    result.push(remaining.max(1));
+
+    // Shuffle the vector to randomize the order
+    result.shuffle(&mut rng);
+
+    result
 }
 
 // AccountData I/O
@@ -128,13 +196,34 @@ pub fn load_accounts() -> io::Result<Vec<AccountData>> {
 
         match import_account_data(path_str) {
             Ok(account_data) => accounts.push(account_data),
-            Err(e) => eprintln!(
-                "Error importing account data from {} : {}",
-                path_str,
-                e.to_string()
-            ),
+            Err(e) => eprintln!("Error importing account data from {} : {}", path_str, e),
         }
     }
 
     Ok(accounts)
+}
+
+pub fn order_notes(
+    tag_a: NoteTag,
+    tag_b: NoteTag,
+    notes: Vec<InputNoteRecord>,
+) -> (
+    Vec<InputNoteRecord>,
+    Vec<InputNoteRecord>,
+    Vec<InputNoteRecord>,
+) {
+    let mut tag_a_notes = Vec::new();
+    let mut tag_b_notes = Vec::new();
+    let mut other_notes = Vec::new();
+    for note in notes {
+        let note_tag = note.metadata().map_or(NoteTag::from(0), |m| m.tag());
+        if note_tag == tag_a {
+            tag_a_notes.push(note);
+        } else if note_tag == tag_b {
+            tag_b_notes.push(note);
+        } else {
+            other_notes.push(note);
+        }
+    }
+    (tag_a_notes, tag_b_notes, other_notes)
 }

@@ -1,3 +1,4 @@
+use core::panic;
 use std::time::Duration;
 
 use clap::Parser;
@@ -46,17 +47,46 @@ impl SetupCmd {
         client.sync_state().await.unwrap();
 
         // Create faucet accounts for BTC and ETH
-        let (faucet_a, faucet_a_seed) = Self::create_faucet(100, "BTC", &mut client);
-        let (faucet_b, faucet_b_seed) = Self::create_faucet(100, "ETH", &mut client);
+        let (faucet_a, faucet_a_seed) = Self::create_faucet(1000, "BTC", &mut client);
+        let (faucet_b, faucet_b_seed) = Self::create_faucet(1000, "ETH", &mut client);
 
         // Create admin account
         let (admin, _) = Self::create_wallet(&mut client);
 
         // Mint assets for admin
-        Self::fund_admin_wallet(faucet_a.id(), faucet_b.id(), admin.id(), &mut client).await;
+        Self::fund_admin_wallet(
+            faucet_a.id(),
+            500,
+            faucet_b.id(),
+            500,
+            admin.id(),
+            &mut client,
+        )
+        .await;
 
-        // Create 50 BTC/ETH and 50 ETH/BTC swap notes
-        Self::create_swap_notes(faucet_a.id(), faucet_b.id(), admin.id(), &mut client).await;
+        // Create 50 BTC/ETH swap notes
+        Self::create_swap_notes(
+            50,
+            faucet_a.id(),
+            500,
+            faucet_b.id(),
+            500,
+            admin.id(),
+            &mut client,
+        )
+        .await;
+
+        // Create 50 ETH/BTC swap notes
+        Self::create_swap_notes(
+            50,
+            faucet_b.id(),
+            500,
+            faucet_a.id(),
+            500,
+            admin.id(),
+            &mut client,
+        )
+        .await;
 
         // Export CLOB data
         let faucet_a_with_filename = AccountWithFilename {
@@ -86,14 +116,24 @@ impl SetupCmd {
         S: Store,
         A: TransactionAuthenticator,
     >(
+        num_notes: u8,
         faucet_a: AccountId,
+        total_asset_offering: u64,
         faucet_b: AccountId,
+        total_asset_requesting: u64,
         admin: AccountId,
         client: &mut Client<N, R, S, A>,
     ) {
-        let transaction_request =
-            create_swap_notes_transaction_request(50, admin, faucet_a, faucet_b, client.rng())
-                .unwrap();
+        let transaction_request = create_swap_notes_transaction_request(
+            num_notes,
+            admin,
+            faucet_a,
+            total_asset_offering,
+            faucet_b,
+            total_asset_requesting,
+            client.rng(),
+        )
+        .unwrap();
         let tx_result = client.new_transaction(admin, transaction_request).unwrap();
         client.submit_transaction(tx_result).await.unwrap();
     }
@@ -105,15 +145,17 @@ impl SetupCmd {
         A: TransactionAuthenticator,
     >(
         faucet_a: AccountId,
+        asset_a_amount: u64,
         faucet_b: AccountId,
+        asset_b_amount: u64,
         admin: AccountId,
         client: &mut Client<N, R, S, A>,
     ) {
-        // setup mint
+        // Setup mint
         let note_type = NoteType::Public;
 
-        // Mint 50 BTC
-        let btc = FungibleAsset::new(faucet_a, 50).unwrap();
+        // Mint AssetA
+        let btc = FungibleAsset::new(faucet_a, asset_a_amount).unwrap();
         let transaction_request =
             TransactionRequest::mint_fungible_asset(btc, admin, note_type, client.rng()).unwrap();
         let tx_result = client
@@ -122,8 +164,8 @@ impl SetupCmd {
         let asset_a_note_id = tx_result.relevant_notes()[0].id();
         client.submit_transaction(tx_result).await.unwrap();
 
-        // Mint 50 ETH
-        let eth = FungibleAsset::new(faucet_b, 50).unwrap();
+        // Mint AssetB
+        let eth = FungibleAsset::new(faucet_b, asset_b_amount).unwrap();
         let transaction_request =
             TransactionRequest::mint_fungible_asset(eth, admin, note_type, client.rng()).unwrap();
         let tx_result = client
@@ -185,6 +227,10 @@ impl SetupCmd {
         )
         .unwrap();
 
+        if btc_eth_tag == eth_btc_tag {
+            panic!("Both asset tags should not be similar.")
+        }
+
         println!("BTC faucet: {}", faucet_a.account.id());
         println!("ETH faucet: {}", faucet_b.account.id());
         println!("BTC/ETH tag: {}", btc_eth_tag);
@@ -201,7 +247,5 @@ impl SetupCmd {
             let user_data = AccountData::new(account, Some(account_seed), auth);
             export_account_data(&user_data, filename.as_str()).unwrap();
         }
-
-        // TODO: remove db file
     }
 }
