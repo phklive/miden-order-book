@@ -2,14 +2,14 @@ use core::panic;
 use miden_client::{
     accounts::{AccountData, AccountId},
     assets::{Asset, FungibleAsset},
-    auth::StoreAuthenticator,
+    auth::{StoreAuthenticator, TransactionAuthenticator},
     config::{Endpoint, RpcConfig},
     crypto::{FeltRng, RpoRandomCoin},
     notes::{NoteTag, NoteType},
-    rpc::TonicRpcClient,
+    rpc::{NodeRpcClient, TonicRpcClient},
     store::{
         sqlite_store::{config::SqliteStoreConfig, SqliteStore},
-        InputNoteRecord,
+        InputNoteRecord, NoteFilter, Store,
     },
     transactions::{
         request::{TransactionRequest, TransactionRequestError},
@@ -28,6 +28,8 @@ use std::{
     path::Path,
     rc::Rc,
 };
+
+use crate::order::Order;
 
 // Client Setup
 // ================================================================================================
@@ -82,9 +84,6 @@ pub fn create_swap_notes_transaction_request(
     let requesting_distribution =
         generate_random_distribution(num_notes as usize, total_asset_requesting);
 
-    let mut total_offering = 0;
-    let mut total_requesting = 0;
-
     for i in 0..num_notes {
         let offered_asset = Asset::Fungible(
             FungibleAsset::new(offering_faucet, offering_distribution[i as usize]).unwrap(),
@@ -102,22 +101,8 @@ pub fn create_swap_notes_transaction_request(
             felt_rng,
         )?;
         expected_future_notes.push(payback_note_details);
-        total_offering += offering_distribution[i as usize];
-        total_requesting += requesting_distribution[i as usize];
-        println!(
-            "{} - Created note with assets:\noffering: {:?}\nreal offering: {}\nrequesting: {}\nreal requesting: {}\ninputs: {:?}\n",
-            i,
-            created_note.assets().iter().collect::<Vec<&Asset>>()[0].unwrap_fungible().amount(),
-            offering_distribution[i as usize],
-            created_note.inputs().values()[4],
-            requesting_distribution[i as usize],
-            created_note.inputs().values()
-        );
         own_output_notes.push(OutputNote::Full(created_note));
     }
-
-    println!("Total generated offering asset: {}", total_offering);
-    println!("Total generated requesting asset: {}", total_requesting);
 
     TransactionRequest::new()
         .with_expected_future_notes(expected_future_notes)
@@ -203,27 +188,70 @@ pub fn load_accounts() -> io::Result<Vec<AccountData>> {
     Ok(accounts)
 }
 
-pub fn order_notes(
-    tag_a: NoteTag,
-    tag_b: NoteTag,
-    notes: Vec<InputNoteRecord>,
-) -> (
-    Vec<InputNoteRecord>,
-    Vec<InputNoteRecord>,
-    Vec<InputNoteRecord>,
-) {
-    let mut tag_a_notes = Vec::new();
-    let mut tag_b_notes = Vec::new();
-    let mut other_notes = Vec::new();
-    for note in notes {
-        let note_tag = note.metadata().map_or(NoteTag::from(0), |m| m.tag());
-        if note_tag == tag_a {
-            tag_a_notes.push(note);
-        } else if note_tag == tag_b {
-            tag_b_notes.push(note);
-        } else {
-            other_notes.push(note);
-        }
+pub fn sort_orders(mut orders: Vec<Order>) -> Vec<Order> {
+    orders.sort_by(|a, b| {
+        let a_price = a.price();
+        let b_price = b.price();
+
+        a_price
+            .partial_cmp(&b_price)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    orders
+}
+
+pub fn get_notes_by_tag<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
+    client: Client<N, R, S, A>,
+    tag: NoteTag,
+) -> Vec<InputNoteRecord> {
+    let notes = client.get_input_notes(NoteFilter::All).unwrap();
+
+    notes
+        .into_iter()
+        .filter(|note| note.metadata().unwrap().tag() == tag)
+        .collect()
+}
+
+pub fn get_assets_from_swap_note(note: &InputNoteRecord) -> (Asset, Asset) {
+    let source_asset =
+        Asset::Fungible(note.assets().iter().collect::<Vec<&Asset>>()[0].unwrap_fungible());
+    let target_faucet = AccountId::try_from(note.details().inputs()[7]).unwrap();
+    let target_amount = note.details().inputs()[4].as_int();
+    let target_asset = Asset::Fungible(FungibleAsset::new(target_faucet, target_amount).unwrap());
+    (source_asset, target_asset)
+}
+
+pub fn print_order_table(orders: Vec<Order>) {
+    let mut table = Vec::new();
+    table.push("+--------------------------------------------------------------------+--------------------+------------------+--------------------+------------------+----------+".to_string());
+    table.push("| Note ID                                                            | Requested Asset    | Amount Requested | Offered Asset      | Offered Amount   | Price    |".to_string());
+    table.push("+--------------------------------------------------------------------+--------------------+------------------+--------------------+------------------+----------+".to_string());
+
+    for order in orders {
+        let note_id = order
+            .id()
+            .map_or_else(|| "N/A".to_string(), |id| id.to_string());
+        let source_asset_faucet_id = order.source_asset().faucet_id().to_string();
+        let source_asset_amount = order.source_asset().unwrap_fungible().amount();
+        let target_asset_faucet_id = order.target_asset().faucet_id().to_string();
+        let target_asset_amount = order.target_asset().unwrap_fungible().amount();
+
+        table.push(format!(
+            "| {:<66} | {:<16} | {:<16} | {:<16} | {:<16} | {:<8.2} |",
+            note_id,
+            target_asset_faucet_id,
+            target_asset_amount,
+            source_asset_faucet_id,
+            source_asset_amount,
+            order.price()
+        ));
     }
-    (tag_a_notes, tag_b_notes, other_notes)
+
+    table.push("+--------------------------------------------------------------------+--------------------+------------------+--------------------+------------------+----------+".to_string());
+
+    // Print table
+    for line in table {
+        println!("{}", line);
+    }
 }
