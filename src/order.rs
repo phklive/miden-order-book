@@ -2,7 +2,7 @@ use miden_client::{assets::Asset, notes::NoteId, store::InputNoteRecord};
 
 use crate::{errors::OrderError, utils::get_assets_from_swap_note};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Order {
     id: Option<NoteId>,
     source_asset: Asset,
@@ -55,7 +55,7 @@ impl From<InputNoteRecord> for Order {
 // Utils
 /////////////////////////////////////////////////
 
-pub fn match_orders(incoming_order: &Order, existing_order: &Order) -> Result<(), OrderError> {
+pub fn match_orders(incoming_order: Order, existing_order: Order) -> Result<Order, OrderError> {
     // Orders match if:
     // - They have inversed source and target assets
     // - Contains enough assets to fullfill the incoming order
@@ -82,7 +82,20 @@ pub fn match_orders(incoming_order: &Order, existing_order: &Order) -> Result<()
         return Err(OrderError::TooManyTargetAssets);
     }
 
-    Ok(())
+    Ok(existing_order)
+}
+
+pub fn sort_orders(mut orders: Vec<Order>) -> Vec<Order> {
+    orders.sort_by(|a, b| {
+        let a_price = a.price();
+        let b_price = b.price();
+
+        a_price
+            .partial_cmp(&b_price)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    orders
 }
 
 // Tests
@@ -157,16 +170,16 @@ mod tests {
     fn order_matching_succeeds() {
         let (incoming_order, existing_orders) = mock_orders();
         let expected_results = [
-            Ok(()),
+            Ok(existing_orders[0]),
             Err(OrderError::AssetsNotMatching),
             Err(OrderError::TooFewSourceAssets),
             Err(OrderError::TooManyTargetAssets),
-            Ok(()),
+            Ok(existing_orders[4]),
         ];
 
         for (existing_order, expected_result) in existing_orders.into_iter().zip(expected_results) {
             assert_eq!(
-                match_orders(&incoming_order, &existing_order),
+                match_orders(incoming_order, existing_order),
                 expected_result,
                 "Mismatch for order: {:?}",
                 existing_order

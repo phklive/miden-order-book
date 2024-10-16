@@ -188,24 +188,13 @@ pub fn load_accounts() -> io::Result<Vec<AccountData>> {
     Ok(accounts)
 }
 
-pub fn sort_orders(mut orders: Vec<Order>) -> Vec<Order> {
-    orders.sort_by(|a, b| {
-        let a_price = a.price();
-        let b_price = b.price();
-
-        a_price
-            .partial_cmp(&b_price)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    orders
-}
-
 pub fn get_notes_by_tag<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
-    client: Client<N, R, S, A>,
+    client: &Client<N, R, S, A>,
     tag: NoteTag,
 ) -> Vec<InputNoteRecord> {
     let notes = client.get_input_notes(NoteFilter::All).unwrap();
+
+    println!("Got input notes");
 
     notes
         .into_iter()
@@ -222,7 +211,7 @@ pub fn get_assets_from_swap_note(note: &InputNoteRecord) -> (Asset, Asset) {
     (source_asset, target_asset)
 }
 
-pub fn print_order_table(orders: Vec<Order>) {
+pub fn print_order_table(title: &str, orders: &[Order]) {
     let mut table = Vec::new();
     table.push("+--------------------------------------------------------------------+--------------------+------------------+--------------------+------------------+----------+".to_string());
     table.push("| Note ID                                                            | Requested Asset    | Amount Requested | Offered Asset      | Offered Amount   | Price    |".to_string());
@@ -250,8 +239,38 @@ pub fn print_order_table(orders: Vec<Order>) {
 
     table.push("+--------------------------------------------------------------------+--------------------+------------------+--------------------+------------------+----------+".to_string());
 
+    // Print title
+    println!("{}\n", title);
+
     // Print table
     for line in table {
         println!("{}", line);
     }
+}
+
+pub fn print_balance_update(orders: &[Order]) {
+    if orders.is_empty() {
+        println!("No orders to process. Your balance will not change.");
+        return;
+    }
+
+    let mut total_source_asset = 0u64;
+    let mut total_target_asset = 0u64;
+    let source_faucet_id = orders[0].target_asset().faucet_id();
+    let target_faucet_id = orders[0].source_asset().faucet_id();
+
+    for order in orders {
+        total_source_asset += order.target_asset().unwrap_fungible().amount();
+        total_target_asset += order.source_asset().unwrap_fungible().amount();
+    }
+
+    println!("Balance Update Preview:");
+    println!("------------------------");
+    println!("Assets you will receive:");
+    println!("  Faucet ID: {}", target_faucet_id);
+    println!("  Amount: {}", total_target_asset);
+    println!("\nAssets you will spend:");
+    println!("  Faucet ID: {}", source_faucet_id);
+    println!("  Amount: {}", total_source_asset);
+    println!("------------------------");
 }

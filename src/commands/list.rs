@@ -1,6 +1,6 @@
 use crate::{
-    order::Order,
-    utils::{get_notes_by_tag, print_order_table, sort_orders},
+    order::{sort_orders, Order},
+    utils::{get_notes_by_tag, print_order_table},
 };
 use clap::Parser;
 use miden_client::{
@@ -19,11 +19,12 @@ impl ListCmd {
         &self,
         client: Client<N, R, S, A>,
     ) -> Result<(), String> {
-        let notes = get_notes_by_tag(client, self.swap_tag.into());
+        let notes = get_notes_by_tag(&client, self.swap_tag.into());
         let orders: Vec<Order> = notes.into_iter().map(Order::from).collect();
 
         let sorted_orders = sort_orders(orders);
-        print_order_table(sorted_orders);
+        let title = format!("Relevant orders for tag {}:", self.swap_tag);
+        print_order_table(title.as_str(), &sorted_orders);
 
         Ok(())
     }

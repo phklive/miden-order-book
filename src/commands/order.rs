@@ -1,20 +1,23 @@
+use std::io::{self, Write};
+
 use miden_client::{
     accounts::AccountId,
     assets::{Asset, FungibleAsset},
     auth::TransactionAuthenticator,
     crypto::FeltRng,
-    notes::NoteType,
+    notes::{NoteId, NoteType},
     rpc::NodeRpcClient,
     store::Store,
-    transactions::build_swap_tag,
+    transactions::{build_swap_tag, request::TransactionRequest},
     Client,
 };
 
 use clap::Parser;
 
 use crate::{
-    order::{match_orders, Order},
-    utils::{get_notes_by_tag, print_order_table, sort_orders},
+    errors::OrderError,
+    order::{match_orders, sort_orders, Order},
+    utils::{get_notes_by_tag, print_balance_update, print_order_table},
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -42,7 +45,7 @@ impl OrderCmd {
         client: Client<N, R, S, A>,
     ) -> Result<(), String> {
         // Parse id's
-        let _account_id = AccountId::from_hex(self.account_id.as_str()).unwrap();
+        let account_id = AccountId::from_hex(self.account_id.as_str()).unwrap();
         let source_faucet_id = AccountId::from_hex(self.source_faucet.as_str()).unwrap();
         let target_faucet_id = AccountId::from_hex(self.target_faucet.as_str()).unwrap();
 
@@ -62,20 +65,133 @@ impl OrderCmd {
 
         // Get relevant notes
         let tag = build_swap_tag(NoteType::Public, target_faucet_id, source_faucet_id).unwrap();
-        let notes = get_notes_by_tag(client, tag);
+        let notes = get_notes_by_tag(&client, tag);
+        let existing_orders: Vec<Order> = notes.into_iter().map(Order::from).collect();
 
-        assert!(!notes.is_empty(), "There are no relevant orders available.");
+        assert!(
+            !existing_orders.is_empty(),
+            "There are no relevant orders available."
+        );
 
-        // find matching orders
-        let matching_orders: Vec<Order> = notes
+        // fill order
+        match Self::fill_order(incoming_order, existing_orders) {
+            Ok(orders) => Self::fill_success(account_id, orders, client)
+                .await
+                .map_err(|_| "Failed in fill success.".to_string())?,
+            Err(err) => match err {
+                OrderError::FailedFill(order) => Self::fill_failure(order, client)
+                    .await
+                    .map_err(|_| "Failed in fill failure.".to_string())?,
+                _ => panic!("Unknown error."),
+            },
+        }
+
+        Ok(())
+    }
+
+    pub fn fill_order(
+        incoming_order: Order,
+        existing_orders: Vec<Order>,
+    ) -> Result<Vec<Order>, OrderError> {
+        // Sort existing orders
+        let sorted_orders = sort_orders(existing_orders);
+
+        // Keep only orders that match incoming order
+        let mut matching_orders = Vec::new();
+        for order in sorted_orders {
+            match match_orders(incoming_order, order) {
+                Ok(order) => matching_orders.push(order),
+                Err(_) => continue,
+            }
+        }
+
+        // The goal is to find the best combination of orders that could fill the incoming order
+        // - Maximize the amount of target asset that the incoming order can get
+        // - Make sure that all swaps can be successfully filled
+        let mut remaining_source = incoming_order.source_asset().unwrap_fungible().amount();
+        let target = incoming_order.target_asset().unwrap_fungible().amount();
+
+        let mut final_orders = Vec::new();
+        for order in matching_orders {
+            let order_amount = order.target_asset().unwrap_fungible().amount();
+
+            if remaining_source == 0 {
+                break;
+            }
+
+            if order_amount <= remaining_source {
+                remaining_source = remaining_source.saturating_sub(order_amount);
+                final_orders.push(order);
+            }
+        }
+
+        let final_target_amount: u64 = final_orders
+            .iter()
+            .map(|order| order.source_asset().unwrap_fungible().amount())
+            .sum();
+
+        // We have not hit the required target amount
+        if final_target_amount < target {
+            return Err(OrderError::FailedFill(incoming_order));
+        }
+
+        Ok(final_orders)
+    }
+
+    async fn fill_success<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
+        account_id: AccountId,
+        orders: Vec<Order>,
+        mut client: Client<N, R, S, A>,
+    ) -> Result<(), OrderError> {
+        // print final orders
+        print_order_table("Final orders:", &orders);
+
+        // print user balance update
+        print_balance_update(&orders);
+
+        // Prompt user for confirmation
+        print!("Do you want to proceed with the execution? [Y/n]: ");
+        io::stdout()
+            .flush()
+            .map_err(|e| OrderError::InternalError(format!("Failed to flush stdout: {}", e)))?;
+
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| OrderError::InternalError(format!("Failed to read user input: {}", e)))?;
+
+        let proceed = input.trim().to_lowercase();
+        if proceed != "y" && proceed != "yes" && !proceed.is_empty() {
+            println!("Execution cancelled by user.");
+            return Ok(());
+        }
+
+        // Proceed with execution
+        let final_order_ids = orders
             .into_iter()
-            .map(Order::from)
-            .filter(|order| match_orders(&incoming_order, order).is_ok())
-            .collect();
-        let sorted_orders = sort_orders(matching_orders);
+            .map(|order| order.id().ok_or(OrderError::MissingId))
+            .collect::<Result<Vec<NoteId>, OrderError>>()?;
 
-        print_order_table(sorted_orders);
+        // Create transaction
+        let transaction_request = TransactionRequest::consume_notes(final_order_ids);
+        let transaction = client
+            .new_transaction(account_id, transaction_request)
+            .map_err(|e| {
+                OrderError::InternalError(format!("Failed to create transaction: {}", e))
+            })?;
 
+        client.submit_transaction(transaction).await.map_err(|e| {
+            OrderError::InternalError(format!("Failed to submit transaction: {}", e))
+        })?;
+
+        println!("Order filled successfully.");
+        Ok(())
+    }
+
+    async fn fill_failure<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
+        order: Order,
+        _client: Client<N, R, S, A>,
+    ) -> Result<(), OrderError> {
         // // find matching orders
         // let matching_order_ids: Result<Vec<NoteId>, OrderError> = relevant_notes
         //     .into_iter()
@@ -95,6 +211,7 @@ impl OrderCmd {
         //     .submit_transaction(transaction)
         //     .await
         //     .map_err(|e| format!("Failed to submit transaction: {}", e))?;
+        println!("Failed to fill order: {:?}", order);
 
         Ok(())
     }

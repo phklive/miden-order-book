@@ -1,7 +1,11 @@
+use crate::order::Order;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum OrderError {
     AssetsNotMatching,
     TooFewSourceAssets,
     TooManyTargetAssets,
-    // MissingOrderId,
+    FailedFill(Order),
+    MissingId,
+    InternalError(String),
 }
