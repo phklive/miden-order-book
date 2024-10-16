@@ -27,28 +27,28 @@ use crate::{
 #[command(about = "Execute an order")]
 pub struct OrderCmd {
     /// Account executing the order
-    account_id: String,
+    pub user: String,
 
     /// Target faucet id
-    target_faucet: String,
+    pub target_faucet: String,
 
     /// Target asset amount
-    target_amount: u64,
+    pub target_amount: u64,
 
     /// Source faucet id
-    source_faucet: String,
+    pub source_faucet: String,
 
     /// Source asset amount
-    source_amount: u64,
+    pub source_amount: u64,
 }
 
 impl OrderCmd {
     pub async fn execute<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
         &self,
-        client: Client<N, R, S, A>,
+        client: &mut Client<N, R, S, A>,
     ) -> Result<(), String> {
         // Parse id's
-        let account_id = AccountId::from_hex(self.account_id.as_str()).unwrap();
+        let account_id = AccountId::from_hex(self.user.as_str()).unwrap();
         let source_faucet_id = AccountId::from_hex(self.source_faucet.as_str()).unwrap();
         let target_faucet_id = AccountId::from_hex(self.target_faucet.as_str()).unwrap();
 
@@ -143,7 +143,7 @@ impl OrderCmd {
     async fn fill_success<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
         orders: Vec<Order>,
         account_id: AccountId,
-        mut client: Client<N, R, S, A>,
+        client: &mut Client<N, R, S, A>,
     ) -> Result<(), OrderError> {
         // print final orders
         print_order_table("Final orders:", &orders);
@@ -193,7 +193,7 @@ impl OrderCmd {
     async fn fill_failure<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
         order: Order,
         account_id: AccountId,
-        mut client: Client<N, R, S, A>,
+        client: &mut Client<N, R, S, A>,
     ) -> Result<(), OrderError> {
         println!("Unable to fill the requested order.\n");
 

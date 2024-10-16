@@ -2,8 +2,8 @@ use clap::Parser;
 
 use crate::{
     commands::{
-        init::InitCmd, list::ListCmd, login::LoginCmd, order::OrderCmd, query::QueryCmd,
-        setup::SetupCmd, sync::SyncCmd,
+        demo::DemoCmd, init::InitCmd, list::ListCmd, login::LoginCmd, order::OrderCmd,
+        query::QueryCmd, setup::SetupCmd, sync::SyncCmd,
     },
     utils::setup_client,
 };
@@ -18,6 +18,7 @@ pub enum Command {
     List(ListCmd),
     Sync(SyncCmd),
     Query(QueryCmd),
+    Demo(DemoCmd),
 }
 
 /// Root CLI struct
@@ -36,17 +37,18 @@ pub struct Cli {
 impl Cli {
     pub async fn execute(&self) -> Result<(), String> {
         // Setup client
-        let client = setup_client();
+        let mut client = setup_client();
 
         // Execute Cli commands
         match &self.action {
-            Command::Setup(setup) => setup.execute(client).await,
-            Command::Order(order) => order.execute(client).await,
-            Command::Sync(sync) => sync.execute(client).await,
+            Command::Setup(setup) => setup.execute(&mut client).await,
+            Command::Order(order) => order.execute(&mut client).await,
+            Command::Sync(sync) => sync.execute(&mut client).await,
             Command::Init(init) => init.execute(),
-            Command::Query(query) => query.execute(client).await,
-            Command::List(list) => list.execute(client),
-            Command::Login(login) => login.execute(client),
+            Command::Query(query) => query.execute(&mut client).await,
+            Command::List(list) => list.execute(&mut client),
+            Command::Login(login) => login.execute(&mut client),
+            Command::Demo(demo) => demo.execute(&mut client).await,
         }
     }
 }

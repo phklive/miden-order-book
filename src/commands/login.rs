@@ -16,7 +16,7 @@ pub struct LoginCmd {}
 impl LoginCmd {
     pub fn execute<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
         &self,
-        mut client: Client<N, R, S, A>,
+        client: &mut Client<N, R, S, A>,
     ) -> Result<(), String> {
         // Create user account
         let wallet_template = AccountTemplate::BasicWallet {

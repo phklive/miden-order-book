@@ -11,13 +11,13 @@ use super::sync::SyncCmd;
 pub struct QueryCmd {
     /// Tags to be queried from the rollup
     #[clap(required = true)]
-    tags: Vec<u32>,
+    pub tags: Vec<u32>,
 }
 
 impl QueryCmd {
     pub async fn execute<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
         &self,
-        mut client: Client<N, R, S, A>,
+        client: &mut Client<N, R, S, A>,
     ) -> Result<(), String> {
         for tag in self.tags.clone() {
             client.add_note_tag(tag.into()).map_err(|e| e.to_string())?;

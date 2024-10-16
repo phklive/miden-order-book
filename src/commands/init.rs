@@ -1,4 +1,4 @@
-use crate::constants::{ACCOUNTS_DIR, DB_FILE_PATH};
+use crate::constants::{ACCOUNTS_DIR, CLOB_DATA_FILE_PATH, DB_FILE_PATH};
 use clap::Parser;
 use std::{fs, path::Path};
 
@@ -9,6 +9,7 @@ pub struct InitCmd {}
 impl InitCmd {
     pub fn execute(&self) -> Result<(), String> {
         self.remove_file_if_exists(DB_FILE_PATH)?;
+        self.remove_file_if_exists(CLOB_DATA_FILE_PATH)?;
         self.remove_folder_if_exists(ACCOUNTS_DIR)?;
         println!("State successfully initialized.");
         Ok(())

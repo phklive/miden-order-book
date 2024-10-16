@@ -1,5 +1,10 @@
 use core::panic;
-use std::time::Duration;
+use std::{
+    fs::{File, OpenOptions},
+    io::{Read, Write},
+    path::Path,
+    time::Duration,
+};
 
 use clap::Parser;
 use miden_client::{
@@ -7,18 +12,33 @@ use miden_client::{
     assets::{FungibleAsset, TokenSymbol},
     auth::TransactionAuthenticator,
     crypto::FeltRng,
-    notes::NoteType,
+    notes::{NoteTag, NoteType},
     rpc::NodeRpcClient,
     store::Store,
     transactions::{build_swap_tag, request::TransactionRequest},
     Client, Word,
 };
+use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
 use crate::{
-    constants::DB_FILE_PATH,
+    constants::{CLOB_DATA_FILE_PATH, DB_FILE_PATH},
     utils::{clear_notes_tables, create_swap_notes_transaction_request},
 };
+
+//
+// ================================================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Clob {
+    pub faucet1: AccountId,
+    pub faucet1_name: String,
+    pub faucet2: AccountId,
+    pub faucet2_name: String,
+    pub user: AccountId,
+    pub swap_1_2_tag: NoteTag,
+    pub swap_2_1_tag: NoteTag,
+}
 
 // Setup COMMAND
 // ================================================================================================
@@ -30,56 +50,56 @@ pub struct SetupCmd {}
 impl SetupCmd {
     pub async fn execute<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
         &self,
-        mut client: Client<N, R, S, A>,
+        client: &mut Client<N, R, S, A>,
     ) -> Result<(), String> {
         // Sync rollup state
         client.sync_state().await.unwrap();
 
         // Create faucet accounts
-        let (faucet1, _) = Self::create_faucet(1000, "ASSETA", &mut client);
-        let (faucet2, _) = Self::create_faucet(1000, "ASSETB", &mut client);
+        let (faucet1, _) = Self::create_faucet(1000, "ASSETA", client);
+        let (faucet2, _) = Self::create_faucet(1000, "ASSETB", client);
 
         // Create user account
-        let (user, _) = Self::create_wallet(&mut client);
+        let (user, _) = Self::create_wallet(client);
 
         // Mint assets for user
-        Self::fund_user_wallet(
-            faucet1.id(),
-            1000,
-            faucet2.id(),
-            1000,
-            user.id(),
-            &mut client,
-        )
-        .await;
+        Self::fund_user_wallet(faucet1.id(), 1000, faucet2.id(), 1000, user.id(), client).await;
 
         // Create 50 ASSETA/ASSETB swap notes
-        Self::create_swap_notes(
-            50,
-            faucet1.id(),
-            500,
-            faucet2.id(),
-            500,
-            user.id(),
-            &mut client,
-        )
-        .await;
+        Self::create_swap_notes(50, faucet1.id(), 500, faucet2.id(), 500, user.id(), client).await;
 
         // Create 50 ASSETB/ASSETA swap notes
-        Self::create_swap_notes(
-            50,
-            faucet2.id(),
-            500,
-            faucet1.id(),
-            500,
-            user.id(),
-            &mut client,
-        )
-        .await;
+        Self::create_swap_notes(50, faucet2.id(), 500, faucet1.id(), 500, user.id(), client).await;
 
+        // Build note tags
+        let swap_1_2_tag = build_swap_tag(NoteType::Public, faucet1.id(), faucet2.id()).unwrap();
+        let swap_2_1_tag = build_swap_tag(NoteType::Public, faucet2.id(), faucet1.id()).unwrap();
+
+        if swap_1_2_tag == swap_2_1_tag {
+            panic!("Both asset tags should not be similar.");
+        }
+
+        // Sanitize client db
         clear_notes_tables(DB_FILE_PATH).unwrap();
 
-        Self::print_clob_data(faucet1.id(), faucet2.id(), user.id());
+        Self::print_clob_data(
+            faucet1.id(),
+            faucet2.id(),
+            user.id(),
+            swap_1_2_tag,
+            swap_2_1_tag,
+        );
+
+        Self::export_clob_data(
+            faucet1.id(),
+            "BTC",
+            faucet2.id(),
+            "ETH",
+            user.id(),
+            swap_1_2_tag,
+            swap_2_1_tag,
+        )
+        .unwrap();
 
         println!("CLOB successfully setup.");
 
@@ -186,19 +206,68 @@ impl SetupCmd {
         client.new_account(faucet_template).unwrap()
     }
 
-    fn print_clob_data(faucet1: AccountId, faucet2: AccountId, user: AccountId) {
-        // build swap tags
-        let faucet1_faucet2_tag = build_swap_tag(NoteType::Public, faucet1, faucet2).unwrap();
-        let faucet2_faucet1_tag = build_swap_tag(NoteType::Public, faucet2, faucet1).unwrap();
+    fn print_clob_data(
+        faucet1: AccountId,
+        faucet2: AccountId,
+        user: AccountId,
+        swap_1_2_tag: NoteTag,
+        swap_2_1_tag: NoteTag,
+    ) {
+        println!("faucet1: {}", faucet1);
+        println!("faucet2: {}", faucet2);
+        println!("swap_1_2_tag: {}", swap_1_2_tag);
+        println!("swap_2_1_tag: {}", swap_2_1_tag);
+        println!("User: {}", user);
+    }
 
-        if faucet1_faucet2_tag == faucet2_faucet1_tag {
-            panic!("Both asset tags should not be similar.")
+    fn export_clob_data(
+        faucet1: AccountId,
+        faucet1_name: &str,
+        faucet2: AccountId,
+        faucet2_name: &str,
+        user: AccountId,
+        swap_1_2_tag: NoteTag,
+        swap_2_1_tag: NoteTag,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let clob = Clob {
+            faucet1,
+            faucet1_name: faucet1_name.to_string(),
+            faucet2,
+            faucet2_name: faucet2_name.to_string(),
+            user,
+            swap_1_2_tag,
+            swap_2_1_tag,
+        };
+
+        // Serialize the struct to a TOML string
+        let toml_string = toml::to_string(&clob)?;
+
+        // Write the TOML string to a file
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(CLOB_DATA_FILE_PATH)?;
+
+        file.write_all(toml_string.as_bytes())?;
+
+        Ok(())
+    }
+
+    pub fn import_clob_data() -> Result<Clob, Box<dyn std::error::Error>> {
+        // Check if file exists
+        if !Path::new(CLOB_DATA_FILE_PATH).exists() {
+            return Err(format!("CLOB data file not found: {}", CLOB_DATA_FILE_PATH).into());
         }
 
-        println!("faucet1: {}", faucet1);
-        println!("faucet2: {}\n", faucet2);
-        println!("faucet1/faucet2 tag: {}", faucet1_faucet2_tag);
-        println!("faucet2/faucet1 tag: {}\n", faucet2_faucet1_tag);
-        println!("User: {}\n", user);
+        // Read the TOML file contents
+        let mut file = File::open(CLOB_DATA_FILE_PATH)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+
+        // Deserialize the TOML string into a Clob struct
+        let clob: Clob = toml::from_str(&contents)?;
+
+        Ok(clob)
     }
 }

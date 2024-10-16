@@ -11,7 +11,7 @@ pub struct SyncCmd {}
 impl SyncCmd {
     pub async fn execute<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
         &self,
-        mut client: Client<N, R, S, A>,
+        client: &mut Client<N, R, S, A>,
     ) -> Result<(), String> {
         client.sync_state().await?;
         println!("Sync successful.");
