@@ -1,4 +1,3 @@
-pub mod fund;
 pub mod init;
 pub mod list;
 pub mod login;

@@ -8,7 +8,10 @@ use miden_client::{
     notes::{NoteId, NoteType},
     rpc::NodeRpcClient,
     store::Store,
-    transactions::{build_swap_tag, request::TransactionRequest},
+    transactions::{
+        build_swap_tag,
+        request::{SwapTransactionData, TransactionRequest},
+    },
     Client,
 };
 
@@ -49,12 +52,11 @@ impl OrderCmd {
         let source_faucet_id = AccountId::from_hex(self.source_faucet.as_str()).unwrap();
         let target_faucet_id = AccountId::from_hex(self.target_faucet.as_str()).unwrap();
 
-        // TODO: add back when fund is fixed
-        // // Check if user has balance
-        // let (account, _) = client.get_account(account_id).unwrap();
-        // if account.vault().get_balance(source_faucet_id).unwrap() < self.source_amount {
-        //     panic!("User does not have enough assets to execute this order.");
-        // }
+        // Check if user has balance
+        let (account, _) = client.get_account(account_id).unwrap();
+        if account.vault().get_balance(source_faucet_id).unwrap() < self.source_amount {
+            panic!("User does not have enough assets to execute this order.");
+        }
 
         // Build order
         let source_asset =
@@ -75,11 +77,11 @@ impl OrderCmd {
 
         // fill order
         match Self::fill_order(incoming_order, existing_orders) {
-            Ok(orders) => Self::fill_success(account_id, orders, client)
+            Ok(orders) => Self::fill_success(orders, account_id, client)
                 .await
                 .map_err(|_| "Failed in fill success.".to_string())?,
             Err(err) => match err {
-                OrderError::FailedFill(order) => Self::fill_failure(order, client)
+                OrderError::FailedFill(order) => Self::fill_failure(order, account_id, client)
                     .await
                     .map_err(|_| "Failed in fill failure.".to_string())?,
                 _ => panic!("Unknown error."),
@@ -139,8 +141,8 @@ impl OrderCmd {
     }
 
     async fn fill_success<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
-        account_id: AccountId,
         orders: Vec<Order>,
+        account_id: AccountId,
         mut client: Client<N, R, S, A>,
     ) -> Result<(), OrderError> {
         // print final orders
@@ -150,7 +152,7 @@ impl OrderCmd {
         print_balance_update(&orders);
 
         // Prompt user for confirmation
-        print!("Do you want to proceed with the execution? [Y/n]: ");
+        println!("Do you want to proceed with the execution? [Y/n]: ");
         io::stdout()
             .flush()
             .map_err(|e| OrderError::InternalError(format!("Failed to flush stdout: {}", e)))?;
@@ -190,27 +192,43 @@ impl OrderCmd {
 
     async fn fill_failure<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
         order: Order,
-        _client: Client<N, R, S, A>,
+        account_id: AccountId,
+        mut client: Client<N, R, S, A>,
     ) -> Result<(), OrderError> {
-        // // find matching orders
-        // let matching_order_ids: Result<Vec<NoteId>, OrderError> = relevant_notes
-        //     .into_iter()
-        //     .map(Order::from)
-        //     .filter(|order| match_orders(&incoming_order, order).is_ok())
-        //     .map(|matching_order| matching_order.id().ok_or(OrderError::MissingOrderId))
-        //     .collect();
+        println!("Unable to fill the requested order.\n");
 
-        // // Create transaction
-        // let transaction_request = TransactionRequest::consume_notes(matching_order_ids);
+        // Prompt user for confirmation
+        println!("Do you want to add order to the order book? [Y/n]: ");
+        io::stdout()
+            .flush()
+            .map_err(|e| OrderError::InternalError(format!("Failed to flush stdout: {}", e)))?;
 
-        // let transaction = client
-        //     .new_transaction(account_id, transaction_request)
-        //     .map_err(|e| format!("Failed to create transaction: {}", e))?;
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| OrderError::InternalError(format!("Failed to read user input: {}", e)))?;
 
-        // client
-        //     .submit_transaction(transaction)
-        //     .await
-        //     .map_err(|e| format!("Failed to submit transaction: {}", e))?;
+        let proceed = input.trim().to_lowercase();
+        if proceed != "y" && proceed != "yes" && !proceed.is_empty() {
+            println!("Execution cancelled by user.");
+            return Ok(());
+        }
+
+        let swap_data =
+            SwapTransactionData::new(account_id, order.source_asset(), order.target_asset());
+        let transaction_request =
+            TransactionRequest::swap(swap_data, NoteType::Public, client.rng()).unwrap();
+
+        let transaction = client
+            .new_transaction(account_id, transaction_request)
+            .map_err(|e| {
+                OrderError::InternalError(format!("Failed to create transaction: {}", e))
+            })?;
+
+        client.submit_transaction(transaction).await.map_err(|e| {
+            OrderError::InternalError(format!("Failed to submit transaction: {}", e))
+        })?;
+
         println!("Failed to fill order: {:?}", order);
 
         Ok(())
