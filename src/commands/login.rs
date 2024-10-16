@@ -1,4 +1,3 @@
-use crate::utils::load_accounts;
 use clap::Parser;
 
 use miden_client::{
@@ -11,7 +10,7 @@ use miden_client::{
 };
 
 #[derive(Debug, Clone, Parser)]
-#[clap(about = "Create a new account and login")]
+#[clap(about = "Create a new user account")]
 pub struct LoginCmd {}
 
 impl LoginCmd {
@@ -19,12 +18,6 @@ impl LoginCmd {
         &self,
         mut client: Client<N, R, S, A>,
     ) -> Result<(), String> {
-        // Import existing accounts
-        let accounts = load_accounts().unwrap();
-        for account_data in accounts {
-            client.import_account(account_data).unwrap()
-        }
-
         // Create user account
         let wallet_template = AccountTemplate::BasicWallet {
             mutable_code: false,

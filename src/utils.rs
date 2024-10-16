@@ -1,6 +1,6 @@
 use core::panic;
 use miden_client::{
-    accounts::{AccountData, AccountId},
+    accounts::AccountId,
     assets::{Asset, FungibleAsset},
     auth::{StoreAuthenticator, TransactionAuthenticator},
     config::{Endpoint, RpcConfig},
@@ -17,17 +17,10 @@ use miden_client::{
     },
     Client, Felt,
 };
-use miden_lib::{
-    notes::create_swap_note,
-    utils::{Deserializable, Serializable},
-};
+use miden_lib::notes::create_swap_note;
 use rand::{seq::SliceRandom, Rng};
-use std::{
-    fs::{self, File},
-    io::{self, Read, Write},
-    path::Path,
-    rc::Rc,
-};
+use rusqlite::{Connection, Result};
+use std::rc::Rc;
 
 use crate::order::Order;
 
@@ -145,60 +138,23 @@ pub fn generate_random_distribution(n: usize, total: u64) -> Vec<u64> {
     result
 }
 
-// AccountData I/O
-// ================================================================================================
-
-pub fn export_account_data(account_data: &AccountData, filename: &str) -> io::Result<()> {
-    let serialized = account_data.to_bytes();
-    fs::create_dir_all("accounts")?;
-    let file_path = Path::new("accounts").join(format!("{}.mac", filename));
-    let mut file = File::create(file_path)?;
-    file.write_all(&serialized)?;
-    Ok(())
-}
-
-pub fn import_account_data(file_path: &str) -> io::Result<AccountData> {
-    let mut file = File::open(file_path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-    AccountData::read_from_bytes(&buffer)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
-}
-
-pub fn load_accounts() -> io::Result<Vec<AccountData>> {
-    let accounts_dir = Path::new("accounts");
-
-    if !accounts_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut accounts = Vec::new();
-
-    for entry in fs::read_dir(accounts_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let path_str = path.to_str().unwrap();
-
-        match import_account_data(path_str) {
-            Ok(account_data) => accounts.push(account_data),
-            Err(e) => eprintln!("Error importing account data from {} : {}", path_str, e),
-        }
-    }
-
-    Ok(accounts)
-}
-
 pub fn get_notes_by_tag<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
     client: &Client<N, R, S, A>,
     tag: NoteTag,
 ) -> Vec<InputNoteRecord> {
     let notes = client.get_input_notes(NoteFilter::All).unwrap();
 
-    println!("Got input notes");
-
     notes
         .into_iter()
-        .filter(|note| note.metadata().unwrap().tag() == tag)
+        .filter_map(|note| {
+            note.clone().metadata().and_then(|metadata| {
+                if metadata.tag() == tag {
+                    Some(note)
+                } else {
+                    None
+                }
+            })
+        })
         .collect()
 }
 
@@ -273,4 +229,21 @@ pub fn print_balance_update(orders: &[Order]) {
     println!("  Faucet ID: {}", source_faucet_id);
     println!("  Amount: {}", total_source_asset);
     println!("------------------------");
+}
+
+pub fn clear_notes_tables(db_path: &str) -> Result<()> {
+    // Open a connection to the SQLite database
+    let conn = Connection::open(db_path)?;
+
+    // Execute the DELETE commands
+    conn.execute_batch(
+        "
+        DELETE FROM output_notes;
+        DELETE FROM input_notes;
+    ",
+    )?;
+
+    println!("Both output_notes and input_notes tables have been cleared.");
+
+    Ok(())
 }

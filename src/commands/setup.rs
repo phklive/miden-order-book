@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use miden_client::{
-    accounts::{Account, AccountData, AccountId, AccountStorageType, AccountTemplate},
+    accounts::{Account, AccountId, AccountStorageType, AccountTemplate},
     assets::{FungibleAsset, TokenSymbol},
     auth::TransactionAuthenticator,
     crypto::FeltRng,
@@ -17,19 +17,8 @@ use tokio::time::sleep;
 
 use crate::{
     constants::DB_FILE_PATH,
-    utils::{create_swap_notes_transaction_request, export_account_data},
+    utils::{clear_notes_tables, create_swap_notes_transaction_request},
 };
-
-use super::init::InitCmd;
-
-// AccountWithFilename
-// ================================================================================================
-
-struct AccountWithFilename {
-    account: Account,
-    account_seed: Word,
-    filename: String,
-}
 
 // Setup COMMAND
 // ================================================================================================
@@ -51,7 +40,7 @@ impl SetupCmd {
         let (faucet2, _) = Self::create_faucet(1000, "ASSETB", &mut client);
 
         // Create user account
-        let (user, user_seed) = Self::create_wallet(&mut client);
+        let (user, _) = Self::create_wallet(&mut client);
 
         // Mint assets for user
         Self::fund_user_wallet(
@@ -88,17 +77,9 @@ impl SetupCmd {
         )
         .await;
 
-        // Export CLOB data
-        let user_with_filename = AccountWithFilename {
-            account: user,
-            account_seed: user_seed,
-            filename: "user".to_string(),
-        };
-        Self::export_clob_data(faucet1.id(), faucet2.id(), user_with_filename, &mut client);
+        clear_notes_tables(DB_FILE_PATH).unwrap();
 
-        // Remove DB file
-        let init = InitCmd {};
-        init.remove_file_if_exists(DB_FILE_PATH).unwrap();
+        Self::print_clob_data(faucet1.id(), faucet2.id(), user.id());
 
         println!("CLOB successfully setup.");
 
@@ -205,12 +186,7 @@ impl SetupCmd {
         client.new_account(faucet_template).unwrap()
     }
 
-    fn export_clob_data<N: NodeRpcClient, R: FeltRng, S: Store, A: TransactionAuthenticator>(
-        faucet1: AccountId,
-        faucet2: AccountId,
-        user: AccountWithFilename,
-        client: &mut Client<N, R, S, A>,
-    ) {
+    fn print_clob_data(faucet1: AccountId, faucet2: AccountId, user: AccountId) {
         // build swap tags
         let faucet1_faucet2_tag = build_swap_tag(NoteType::Public, faucet1, faucet2).unwrap();
         let faucet2_faucet1_tag = build_swap_tag(NoteType::Public, faucet2, faucet1).unwrap();
@@ -220,14 +196,9 @@ impl SetupCmd {
         }
 
         println!("faucet1: {}", faucet1);
-        println!("faucet2: {}", faucet2);
-        println!("User: {}", user.account.id());
+        println!("faucet2: {}\n", faucet2);
         println!("faucet1/faucet2 tag: {}", faucet1_faucet2_tag);
-        println!("faucet2/faucet1 tag: {}", faucet2_faucet1_tag);
-
-        // Export user account
-        let auth = client.get_account_auth(user.account.id()).unwrap();
-        let user_data = AccountData::new(user.account, Some(user.account_seed), auth);
-        export_account_data(&user_data, user.filename.as_str()).unwrap();
+        println!("faucet2/faucet1 tag: {}\n", faucet2_faucet1_tag);
+        println!("User: {}\n", user);
     }
 }

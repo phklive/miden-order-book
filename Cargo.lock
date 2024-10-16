@@ -1413,6 +1413,7 @@ dependencies = [
  "miden-client",
  "miden-lib",
  "rand",
+ "rusqlite",
  "serde",
  "tokio",
  "toml",
