@@ -1,6 +1,6 @@
-use crate::commands::{
-    init::InitCmd, list::ListCmd, order::OrderCmd, query::QueryCmd, setup::SetupCmd,
-};
+use std::{thread::sleep, time::Duration};
+
+use crate::commands::{list::ListCmd, order::OrderCmd, query::QueryCmd, setup::SetupCmd};
 use clap::Parser;
 use colored::*;
 use log::{info, warn};
@@ -19,11 +19,6 @@ impl DemoCmd {
     ) -> Result<(), String> {
         self.print_cool_start_message();
 
-        info!("Initializing the demo environment...");
-        let init = InitCmd {};
-        init.execute()
-            .map_err(|e| format!("Initialization failed: {}", e))?;
-
         info!("Setting up the client...");
         let setup = SetupCmd {};
         setup
@@ -34,6 +29,8 @@ impl DemoCmd {
         info!("Importing CLOB data...");
         let clob =
             SetupCmd::import_clob_data().map_err(|e| format!("CLOB data import failed: {}", e))?;
+
+        sleep(Duration::from_secs(10));
 
         info!("Querying the network...");
         let query = QueryCmd {

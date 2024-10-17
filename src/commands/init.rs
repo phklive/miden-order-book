@@ -1,6 +1,9 @@
 use crate::constants::{ACCOUNTS_DIR, CLOB_DATA_FILE_PATH, DB_FILE_PATH};
 use clap::Parser;
-use std::{fs, path::Path};
+use std::{
+    fs::{self, File},
+    path::Path,
+};
 
 #[derive(Debug, Clone, Parser)]
 #[clap(about = "Initialize the order book")]
@@ -9,6 +12,7 @@ pub struct InitCmd {}
 impl InitCmd {
     pub fn execute(&self) -> Result<(), String> {
         self.remove_file_if_exists(DB_FILE_PATH)?;
+        self.create_file(DB_FILE_PATH)?;
         self.remove_file_if_exists(CLOB_DATA_FILE_PATH)?;
         self.remove_folder_if_exists(ACCOUNTS_DIR)?;
         println!("State successfully initialized.");
@@ -30,6 +34,13 @@ impl InitCmd {
             fs::remove_dir_all(path)
                 .map_err(|e| format!("Failed to remove folder {}: {}", folder_path, e))?;
         }
+        Ok(())
+    }
+
+    fn create_file(&self, file_path: &str) -> Result<(), String> {
+        let path = Path::new(file_path);
+        File::create_new(path)
+            .map_err(|e| format!("Failed to create new file {}: {}", file_path, e))?;
         Ok(())
     }
 }

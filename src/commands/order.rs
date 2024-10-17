@@ -152,7 +152,7 @@ impl OrderCmd {
         print_balance_update(&orders);
 
         // Prompt user for confirmation
-        println!("Do you want to proceed with the execution? [Y/n]: ");
+        print!("Do you want to proceed with the execution? [Y/n]: ");
         io::stdout()
             .flush()
             .map_err(|e| OrderError::InternalError(format!("Failed to flush stdout: {}", e)))?;
@@ -195,10 +195,10 @@ impl OrderCmd {
         account_id: AccountId,
         client: &mut Client<N, R, S, A>,
     ) -> Result<(), OrderError> {
-        println!("Unable to fill the requested order.\n");
+        println!("Unable to fill the requested order.");
 
         // Prompt user for confirmation
-        println!("Do you want to add order to the order book? [Y/n]: ");
+        print!("Do you want to add order to the order book? [Y/n]: ");
         io::stdout()
             .flush()
             .map_err(|e| OrderError::InternalError(format!("Failed to flush stdout: {}", e)))?;

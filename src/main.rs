@@ -10,6 +10,8 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
+    env_logger::init();
+
     let cli = Cli::parse();
 
     cli.execute().await
