@@ -1,4 +1,4 @@
-![Miden CLOB logo](assets/logo.jpeg)
+![Miden CLOB logo image](assets/logo.jpeg)
 
 This CLI tool provides an interface for interacting with a central limit order book implemented on the Miden rollup.
 
